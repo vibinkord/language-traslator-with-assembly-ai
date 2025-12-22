@@ -24,6 +24,28 @@ function App() {
   const [audioFileName, setAudioFileName] = useState('')
   const [audioMode, setAudioMode] = useState('tamil-to-english') // or 'english-to-tamil'
 
+  // Keyboard shortcut for translation (Ctrl+Enter)
+  React.useEffect(() => {
+    const handleKeyPress = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (activeTab === 'text') {
+          handleTranslate()
+        } else if (activeTab === 'audio' && audioFile) {
+          handleTranscribeAndTranslate()
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyPress)
+    return () => window.removeEventListener('keydown', handleKeyPress)
+  }, [activeTab, tamilText, englishText, audioFile])
+
+  // Copy to clipboard function
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text)
+    setSuccess('✅ Copied to clipboard!')
+    setTimeout(() => setSuccess(''), 2000)
+  }
+
   // Text Translation
   const handleTranslate = async () => {
     const fromTamil = translationMode === 'tamil-to-english'
