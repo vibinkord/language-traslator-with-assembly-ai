@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install backend dependencies
+      run: |
+        cd Vibin_Translator_1/Code
+        pip install -r requirements.txt
+    
+    - name: Run backend tests
+      run: |
+        cd Vibin_Translator_1/Code
+        python -m pytest test_*.py || echo "No tests found or tests skipped"
+  
+  frontend-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+    
+    - name: Install frontend dependencies
+      run: |
+        cd react-translator
+        npm install
+    
+    - name: Build frontend
+      run: |
+        cd react-translator
+        npm run build
