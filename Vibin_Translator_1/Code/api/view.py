@@ -1,143 +1,190 @@
-import os
-import tempfile
-from flask import Blueprint, request, jsonify
+from flask import request, Blueprint, jsonify
 from translate import Translator
-from dotenv import load_dotenv
 import assemblyai as aai
+import os
+from dotenv import load_dotenv
 
-api_bp = Blueprint("api", __name__)
-
-# Ensure env loaded if factory not yet called
 load_dotenv()
 
-def _ensure_aai_key():
-    # Refresh the API key from environment in case server started from different cwd
-    key = os.getenv("ASSEMBLYAI_API_KEY", "")
-    if aai.settings.api_key != key:
-        aai.settings.api_key = key
+users = Blueprint("api", __name__, url_prefix="/user")
+
+# Set up AssemblyAI API key
+ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY", "")
+if ASSEMBLYAI_API_KEY:
+    aai.settings.api_key = ASSEMBLYAI_API_KEY
 
 
-def _make_translator(to_lang: str):
-    # translate library uses language codes like 'en', 'ta'
-    return Translator(to_lang=to_lang)
-
-
-@api_bp.post("/user/translate")
-def translate_text():
+@users.route("/translate", methods=["POST"])
+def translate():
     try:
-        data = request.get_json(silent=True) or {}
-        tamil_text = data.get("TamilText")
-        english_text = data.get("EnglishText")
+        # Get text from the JSON body
+        data = request.get_json()
+        tamil_text = data.get("TamilText", "")
+        english_text = data.get("EnglishText", "")
 
         if not tamil_text and not english_text:
-            return jsonify({"error": "Please provide either TamilText or EnglishText"}), 400
+            return jsonify({
+                "error": "Provide either TamilText or EnglishText"
+            }), 400
 
         if tamil_text:
-            # Tamil -> English
-            translator = _make_translator("en")
-            translated = translator.translate(tamil_text)
+            # Translate Tamil to English
+            translator = Translator(from_lang="ta", to_lang="en")
+            english_translation = translator.translate(tamil_text)
             return jsonify({
                 "Tamil Text": tamil_text,
-                "English Text": translated
-            })
-        else:
-            # English -> Tamil
-            translator = _make_translator("ta")
-            translated = translator.translate(english_text)
+                "English Text": english_translation
+            }), 200
+        elif english_text:
+            # Translate English to Tamil
+            translator = Translator(from_lang="en", to_lang="ta")
+            tamil_translation = translator.translate(english_text)
             return jsonify({
-                "Tamil Text": translated,
-                "English Text": english_text
-            })
+                "English Text": english_text,
+                "Tamil Text": tamil_translation
+            }), 200
     except Exception as e:
-        return jsonify({"error": f"Translation failed: {e}"}), 500
+        return jsonify({
+            "error": f"Translation failed: {str(e)}"
+        }), 400
 
-
-@api_bp.post("/user/transcribe")
+@users.route("/transcribe", methods=["POST"])
 def transcribe_audio():
-    _ensure_aai_key()
-    if not aai.settings.api_key:
-        return jsonify({"error": "Missing ASSEMBLYAI_API_KEY in environment"}), 500
-
-    if "audio" not in request.files:
-        return jsonify({"error": "Please upload an audio file as 'audio'"}), 400
-
-    audio_file = request.files["audio"]
-    if audio_file.filename == "":
-        return jsonify({"error": "Empty filename"}), 400
-
+    """
+    Transcribe audio file using AssemblyAI
+    Expects: audio file in form data with key 'audio'
+    Returns: Transcribed text
+    """
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(audio_file.filename)[1]) as tmp:
-            audio_path = tmp.name
-            audio_file.save(audio_path)
-
-        transcriber = aai.Transcriber()
-        # Force English STT as discussed
-        config = aai.TranscriptionConfig(language_code="en")
-        transcript = transcriber.transcribe(audio_path, config=config)
-
-        text = transcript.text or ""
-        return jsonify({
-            "transcribed_text": text,
-            "status": "success"
-        })
-    except Exception as e:
-        return jsonify({"error": f"Transcription failed: {e}"}), 500
-    finally:
+        if "audio" not in request.files:
+            return jsonify({
+                "error": "No audio file provided"
+            }), 400
+        
+        audio_file = request.files["audio"]
+        
+        if audio_file.filename == "":
+            return jsonify({
+                "error": "No selected file"
+            }), 400
+        
+        if not ASSEMBLYAI_API_KEY:
+            return jsonify({
+                "error": "AssemblyAI API key not configured"
+            }), 500
+        
+        # Save temporary file
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            audio_file.save(tmp.name)
+            temp_path = tmp.name
+        
         try:
-            if 'audio_path' in locals() and os.path.exists(audio_path):
-                os.remove(audio_path)
-        except Exception:
-            pass
+            # Transcribe the audio
+            transcriber = aai.Transcriber()
+            transcript = transcriber.transcribe(temp_path)
+            
+            # Clean up temp file
+            os.remove(temp_path)
+            
+            if transcript.status == aai.TranscriptStatus.error:
+                return jsonify({
+                    "error": f"Transcription failed: {transcript.error}"
+                }), 400
+            
+            return jsonify({
+                "transcribed_text": transcript.text,
+                "status": "success"
+            }), 200
+        
+        except Exception as e:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise e
+    
+    except Exception as e:
+        return jsonify({
+            "error": f"Error transcribing audio: {str(e)}"
+        }), 500
 
 
-@api_bp.post("/user/transcribe-and-translate")
+@users.route("/transcribe-and-translate", methods=["POST"])
 def transcribe_and_translate():
-    _ensure_aai_key()
-    if not aai.settings.api_key:
-        return jsonify({"error": "Missing ASSEMBLYAI_API_KEY in environment"}), 500
-
-    if "audio" not in request.files:
-        return jsonify({"error": "Please upload an audio file as 'audio'"}), 400
-
-    target_language = request.form.get("target_language", "en").strip().lower()
-    if target_language not in {"en", "ta"}:
-        return jsonify({"error": "target_language must be 'en' or 'ta'"}), 400
-
-    audio_file = request.files["audio"]
-    if audio_file.filename == "":
-        return jsonify({"error": "Empty filename"}), 400
-
+    """
+    Transcribe audio and translate to target language
+    Expects: audio file in form data with key 'audio'
+             target_language in form data (en or ta, defaults to en)
+    """
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(audio_file.filename)[1]) as tmp:
-            audio_path = tmp.name
-            audio_file.save(audio_path)
-
-        transcriber = aai.Transcriber()
-        config = aai.TranscriptionConfig(language_code="en")
-        transcript = transcriber.transcribe(audio_path, config=config)
-        text = (transcript.text or "").strip()
-
-        if not text:
-            return jsonify({"error": "No transcription text produced"}), 500
-
-        if target_language == "en":
-            translator = _make_translator("en")
-            english_text = text
-            tamil_text = _make_translator("ta").translate(text)
-        else:
-            translator = _make_translator("ta")
-            tamil_text = translator.translate(text)
-            english_text = text
-
-        return jsonify({
-            "Tamil Text": tamil_text,
-            "English Text": english_text
-        })
-    except Exception as e:
-        return jsonify({"error": f"Transcribe+Translate failed: {e}"}), 500
-    finally:
+        if "audio" not in request.files:
+            return jsonify({
+                "error": "No audio file provided"
+            }), 400
+        
+        audio_file = request.files["audio"]
+        target_language = request.form.get("target_language", "en")  # Default to English
+        
+        if audio_file.filename == "":
+            return jsonify({
+                "error": "No selected file"
+            }), 400
+        
+        if not ASSEMBLYAI_API_KEY:
+            return jsonify({
+                "error": "AssemblyAI API key not configured"
+            }), 500
+        
+        # Save temporary file
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            audio_file.save(tmp.name)
+            temp_path = tmp.name
+        
         try:
-            if 'audio_path' in locals() and os.path.exists(audio_path):
-                os.remove(audio_path)
-        except Exception:
-            pass
+            # Transcribe the audio - try to detect language
+            transcriber = aai.Transcriber()
+            transcript = transcriber.transcribe(temp_path)
+            
+            # Clean up temp file
+            os.remove(temp_path)
+            
+            if transcript.status == aai.TranscriptStatus.error:
+                return jsonify({
+                    "error": f"Transcription failed: {transcript.error}"
+                }), 400
+            
+            transcribed_text = transcript.text
+            
+            # Determine source language and translate
+            if target_language == "en":
+                # Assume audio is Tamil, translate to English
+                translator = Translator(from_lang="ta", to_lang="en")
+                translated_text = translator.translate(transcribed_text)
+                return jsonify({
+                    "Tamil Text": transcribed_text,
+                    "English Text": translated_text,
+                    "status": "success"
+                }), 200
+            elif target_language == "ta":
+                # Assume audio is English, translate to Tamil
+                translator = Translator(from_lang="en", to_lang="ta")
+                translated_text = translator.translate(transcribed_text)
+                return jsonify({
+                    "English Text": transcribed_text,
+                    "Tamil Text": translated_text,
+                    "status": "success"
+                }), 200
+            else:
+                return jsonify({
+                    "error": "Invalid target language. Use 'en' or 'ta'"
+                }), 400
+        
+        except Exception as e:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise e
+    
+    except Exception as e:
+        return jsonify({
+            "error": f"Error processing audio: {str(e)}"
+        }), 500

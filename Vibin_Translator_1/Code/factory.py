@@ -1,49 +1,38 @@
-import os
 from flask import Flask, jsonify
-import os
 from flask_cors import CORS
-from dotenv import load_dotenv
+from api.view import users
 
-
-def create_app() -> Flask:
-    # Load environment variables
-    load_dotenv()
-
-    app = Flask(__name__)
-
-    # Enable CORS for all routes (frontend dev server on 3001/3002)
-    CORS(app, resources={r"/*": {"origins": "*"}})
-
-    # Register API blueprint
-    from api.view import api_bp
-    app.register_blueprint(api_bp)
-
-    # Root endpoint to describe the API
-    @app.get("/")
-    def index():
+def create_app():
+    app=Flask(__name__)
+    app.register_blueprint(users)
+    CORS(app,origins="*")
+    
+    @app.route("/", methods=["GET"])
+    def home():
         return jsonify({
-        from pathlib import Path
+            "status": "success",
             "message": "Tamil-English Translator API",
+            "version": "1.0",
             "endpoints": {
-                "/user/translate": "POST - Translate Tamil/English text",
-                "/user/transcribe": "POST - Transcribe audio to text (English)",
-                "/user/transcribe-and-translate": "POST - Transcribe and translate audio"
+                "translate": {
+                    "method": "POST",
+                    "url": "/user/translate",
+                    "description": "Translate Tamil text to English",
+                    "example": {"TamilText": "வணக்கம்"}
+                },
+                "transcribe": {
+                    "method": "POST",
+                    "url": "/user/transcribe",
+                    "description": "Transcribe audio to text",
+                    "body": "multipart/form-data with 'audio' field"
+                },
+                "transcribe_and_translate": {
+                    "method": "POST",
+                    "url": "/user/transcribe-and-translate",
+                    "description": "Transcribe Tamil audio and translate to English",
+                    "body": "multipart/form-data with 'audio' field"
+                }
             }
-            # Load environment variables from both backend folder and repo root
-            backend_dir = Path(__file__).resolve().parent
-            repo_root = backend_dir.parent.parent
-            # Load root .env first (so local backend .env can override)
-            load_dotenv(dotenv_path=repo_root / ".env", override=False)
-            load_dotenv(dotenv_path=backend_dir / ".env", override=False)
-            # Also load from process env and default working dir
-            load_dotenv(override=False)
-    # Simple health endpoint to verify environment
-    @app.get("/health")
-    def health():
-        key_present = bool(os.getenv("ASSEMBLYAI_API_KEY", ""))
-        return jsonify({
-            "ok": True,
-            "assemblyai_key_present": key_present
-        })
-
+        }), 200
+    
     return app

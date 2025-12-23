@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Translator</title>
+</head>
+<body>
+  <h1>Tamil to English Translator</h1>
+  <textarea id="tamilText" placeholder="Enter Tamil text here..."></textarea>
+  <br><br>
+  <button onclick="translateText()">Translate</button>
+  <h2>Translation:</h2>
+  <p id="englishText"></p>
+
+  <script>
+    function translateText() {
+  const tamilInput = document.getElementById("tamilText").value;
+
+  fetch("http://localhost:5000/user/translate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ TamilText: tamilInput })
+  })
+  .then(response => response.json())
+  .then(data => {
+    // Log the response data for debugging
+    console.log(data);
+
+    if (data && data["English Text"]) {
+      document.getElementById("englishText").innerText = data["English Text"];
+    } else {
+      document.getElementById("englishText").innerText = "Translation failed.";
+    }
+  })
+  .catch(error => {
+    document.getElementById("englishText").innerText = "Translation failed.";
+    console.error("Error:", error);
+  });
+}
+  </script>
+</body>
+</html>

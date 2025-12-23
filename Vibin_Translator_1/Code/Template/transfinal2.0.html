@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Language Translator</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(to right, #e0c3fc, #8ec5fc);
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      height: 100vh;
+      padding: 30px 10px;
+    }
+
+    h1 {
+      margin-bottom: 10px;
+      color: #4b0082;
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+    }
+
+    .controls {
+      margin-bottom: 10px;
+      display: flex;
+      gap: 10px;
+    }
+
+    select, button {
+      padding: 10px 20px;
+      border-radius: 20px;
+      border: none;
+      font-size: 1rem;
+    }
+
+    textarea {
+      width: 80%;
+      max-width: 600px;
+      height: 150px;
+      padding: 15px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      resize: vertical;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      outline: none;
+      margin-bottom: 10px;
+    }
+
+    #loading {
+      display: none;
+      margin-top: 10px;
+      font-style: italic;
+      color: #444;
+    }
+
+    h2 {
+      margin-top: 20px;
+      color: #222;
+    }
+
+    #englishText, #tamilText {
+      margin-top: 10px;
+      padding: 10px 20px;
+      max-width: 600px;
+      width: 80%;
+      background: #ffffffcc;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      font-size: 1.1rem;
+      text-align: left;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      box-sizing: border-box;
+      min-height: 40px;
+      position: relative;
+    }
+
+    .output-actions {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .output-actions button {
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      background: #2575fc;
+      color: white;
+      border-radius: 20px;
+      cursor: pointer;
+      border: none;
+    }
+
+    .output-actions button:hover {
+      opacity: 0.9;
+    }
+
+    /* Flow Animation */
+    .translate-flow {
+      display: inline-block;
+      white-space: nowrap;
+      opacity: 0;
+      animation: flow-animation 2s forwards;
+    }
+
+    @keyframes flow-animation {
+      0% {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Language Translator</h1>
+
+  <div class="controls">
+    <select id="languageSelect" onchange="toggleTranslation()">
+      <option value="TamilToEnglish">Tamil to English</option>
+      <option value="EnglishToTamil">English to Tamil</option>
+    </select>
+    <button onclick="startDictation()">🎤 Speak</button>
+    <button onclick="clearText()">🧹 Clear</button>
+  </div>
+
+  <textarea id="inputText" placeholder="Enter text here..."></textarea>
+  <br>
+  <button onclick="translateText()">Translate</button>
+  <div id="loading">Translating...</div>
+
+  <h2>Translation:</h2>
+  <div id="outputText"></div>
+  <div class="output-actions">
+    <button onclick="copyTranslation()">📋 Copy</button>
+    <button onclick="speakTranslation()">🔊 Listen</button>
+  </div>
+
+  <script>
+    let currentLanguage = "TamilToEnglish"; // Default to Tamil to English
+
+    function toggleTranslation() {
+      currentLanguage = document.getElementById("languageSelect").value;
+      document.getElementById("inputText").value = "";
+      document.getElementById("outputText").innerHTML = "";
+    }
+
+    function translateText() {
+      const inputText = document.getElementById("inputText").value;
+      const loading = document.getElementById("loading");
+      const output = document.getElementById("outputText");
+      loading.style.display = "block";
+      output.innerHTML = "";
+
+      fetch("http://localhost:5000/user/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ text: inputText, language: currentLanguage })
+      })
+      .then(response => response.json())
+      .then(data => {
+        loading.style.display = "none";
+        if (data && data.translation) {
+          animateTranslation(data.translation);
+        } else {
+          output.innerText = "Translation failed. Response data: " + JSON.stringify(data);
+        }
+      })
+      .catch(error => {
+        loading.style.display = "none";
+        output.innerText = "Translation failed. Please try again.";
+        console.error("Error:", error);
+      });
+    }
+
+    function animateTranslation(text) {
+      const output = document.getElementById("outputText");
+      const words = text.split(" ");
+      words.forEach((word, index) => {
+        const span = document.createElement("span");
+        span.classList.add("translate-flow");
+        span.innerText = word + " ";
+        output.appendChild(span);
+      });
+    }
+
+    function clearText() {
+      document.getElementById("inputText").value = "";
+      document.getElementById("outputText").innerHTML = "";
+    }
+
+    function copyTranslation() {
+      const text = document.getElementById("outputText").innerText;
+      navigator.clipboard.writeText(text).then(() => alert("Copied to clipboard!"));
+    }
+
+    function speakTranslation() {
+      const text = document.getElementById("outputText").innerText;
+      if (text.trim()) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        speechSynthesis.speak(utterance);
+      }
+    }
+
+    function startDictation() {
+      if (!('webkitSpeechRecognition' in window)) {
+        alert("Speech recognition not supported on this browser.");
+        return;
+      }
+      const recognition = new webkitSpeechRecognition();
+      recognition.lang = currentLanguage === "TamilToEnglish" ? 'ta-IN' : 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = function(event) {
+        document.getElementById("inputText").value = event.results[0][0].transcript;
+      };
+      recognition.start();
+    }
+  </script>
+</body>
+</html>
